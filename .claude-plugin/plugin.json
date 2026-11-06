@@ -1,6 +1,6 @@
 {
   "name": "effort-bar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "One row above the prompt to pick the effort level for your next message. The model stays as it is.",
   "author": { "name": "b-y-f" },
   "types": "./types/index.d.ts"

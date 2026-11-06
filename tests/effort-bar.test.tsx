@@ -1,5 +1,6 @@
-import type { TurnStepInput } from 'claude-code'
-import { expect, test } from 'claude-code/testing'
+import type { On, TurnStepInput } from 'claude-code'
+import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 const BAND = {
   plugin: 'effort-bar',
@@ -70,5 +71,66 @@ test('a level changed in Claude Code itself takes over from the bar', async ($, 
 
   expect(sent).toEqual(['xhigh', 'low', 'high', 'high'])
   expect((await ui.find({ key: 'high' }))?.props.variant).toBe('primary')
+  await ui.unmount()
+})
+
+// These hooks stand for the engine at a session's start: the model, the environment and the settings.
+const startSession = async (
+  $: Engine,
+  on: On,
+  { env = {}, modelSettings }: { env?: Record<string, string>; modelSettings?: Record<string, unknown> },
+) => {
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.model', () => ({ value: MODEL }))
+  on('settings.read', () => ({ value: modelSettings ? { modelSettings } : {} }))
+  mock.env(on, env)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`before the first message, the bar shows the level saved for the model (${surface})`, async ($, on) => {
+    mock.store(on)
+    await startSession($, on, { modelSettings: { [MODEL]: { effortLevel: 'medium' } } })
+
+    const ui = await $.ui.mount({ ...BAND, surface })
+    expect((await ui.find({ key: 'medium' }))?.props.variant).toBe('primary')
+    await ui.unmount()
+  })
+}
+
+test('before the first message, CLAUDE_CODE_EFFORT_LEVEL wins over the saved level', async ($, on) => {
+  mock.store(on)
+  await startSession($, on, {
+    env: { CLAUDE_CODE_EFFORT_LEVEL: 'low' },
+    modelSettings: { [MODEL]: { effortLevel: 'xhigh' } },
+  })
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await ui.find({ key: 'low' }))?.props.variant).toBe('primary')
+  await ui.unmount()
+})
+
+test('with no level saved, a session starts on the level the model started the last one at', async ($, on) => {
+  mock.store(on)
+  // The next session starts without this one's values; the store stays.
+  let isNextSession = false
+  on('state.get', { plugin: 'effort-bar', key: 'app' }, (_, e, next) =>
+    isNextSession ? { value: { value: undefined, version: 0 } } : next(e),
+  )
+  on('turn.step', async function* (_, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null }
+  })
+  await startSession($, on, {})
+
+  // The model's default goes out with the first message.
+  const stream = $.turn.step({ turnId: 't', index: 0, model: MODEL, effort: 'medium', messageCount: 1 })
+  for await (const _chunk of stream) {
+    // drain
+  }
+
+  isNextSession = true
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await ui.find({ key: 'medium' }))?.props.variant).toBe('primary')
   await ui.unmount()
 })

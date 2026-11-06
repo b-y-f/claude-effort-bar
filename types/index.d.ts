@@ -7,6 +7,8 @@ declare module 'claude-code' {
       pick: Effort | null
       /** The level Claude Code itself sent on its latest main-thread request. */
       app: Effort | null
+      /** Until that first request: the level Claude Code starts the session at, from its environment, settings or last session. */
+      start: Effort | null
     }
   }
 }
