@@ -1,0 +1,5 @@
+{
+  "name": "claude-effort-bar",
+  "owner": { "name": "b-y-f" },
+  "plugins": [{ "name": "effort-bar", "source": "./" }]
+}
