@@ -1,6 +1,5 @@
-import type { On, TurnStepInput } from 'claude-code'
-import { expect, mock, test } from 'claude-code/testing'
-import type { Engine } from 'claude-code/testing'
+import type { PromptOrigin, RenderSurface, TurnStepInput } from 'claude-code'
+import { expect, test } from 'claude-code/testing'
 
 const BAND = {
   plugin: 'effort-bar',
@@ -74,63 +73,42 @@ test('a level changed in Claude Code itself takes over from the bar', async ($, 
   await ui.unmount()
 })
 
-// These hooks stand for the engine at a session's start: the model, the environment and the settings.
-const startSession = async (
-  $: Engine,
-  on: On,
-  { env = {}, modelSettings }: { env?: Record<string, string>; modelSettings?: Record<string, unknown> },
-) => {
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('session.model', () => ({ value: MODEL }))
-  on('settings.read', () => ({ value: modelSettings ? { modelSettings } : {} }))
-  mock.env(on, env)
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-}
-
-for (const surface of ['terminal', 'desktop'] as const) {
-  test(`before the first message, the bar shows the level saved for the model (${surface})`, async ($, on) => {
-    mock.store(on)
-    await startSession($, on, { modelSettings: { [MODEL]: { effortLevel: 'medium' } } })
+for (const [surface, origin] of [
+  ['terminal', 'composer'],
+  ['desktop', 'sdk'],
+] as const) {
+  test(`a typed message waits until a level is highlighted (${surface})`, async ($, on) => {
+    // These hooks stand for the engine: where the session draws, and the prompt entering.
+    const entered: string[] = []
+    on('session.surfaces', () => ({ value: [surface] }))
+    on('prompt.submit', (_, e) => (entered.push(e.text), { text: e.text }))
+    const submit = () => $.prompt.submit({ text: 'hi', wait: false, origin: { kind: origin } })
 
     const ui = await $.ui.mount({ ...BAND, surface })
-    expect((await ui.find({ key: 'medium' }))?.props.variant).toBe('primary')
+    expect((await ui.findAll({ type: 'Button' })).filter(button => button.props.variant === 'primary')).toEqual([])
+
+    expect((await submit()).drop).toBeDefined()
+
+    await ui.press({ key: 'high' })
+    expect((await submit()).text).toBe('hi')
+    expect(entered).toEqual(['hi'])
     await ui.unmount()
   })
 }
 
-test('before the first message, CLAUDE_CODE_EFFORT_LEVEL wins over the saved level', async ($, on) => {
-  mock.store(on)
-  await startSession($, on, {
-    env: { CLAUDE_CODE_EFFORT_LEVEL: 'low' },
-    modelSettings: { [MODEL]: { effortLevel: 'xhigh' } },
-  })
+test('what the person does not type at the bar goes out with no level highlighted', async ($, on) => {
+  let surfaces: RenderSurface[] = ['terminal']
+  const entered: string[] = []
+  on('session.surfaces', () => ({ value: surfaces }))
+  on('prompt.submit', (_, e) => (entered.push(e.text), { text: e.text }))
+  const submit = (text: string, origin: PromptOrigin, command?: { name: string; args: string }) =>
+    $.prompt.submit({ text, wait: false, origin, ...(command ? { command } : {}) })
 
-  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect((await ui.find({ key: 'low' }))?.props.variant).toBe('primary')
-  await ui.unmount()
-})
+  await submit('task done', { kind: 'task-notification' })
+  await submit('/review', { kind: 'composer' }, { name: 'review', args: '' })
+  // A `claude -p` run draws nowhere.
+  surfaces = []
+  await submit('from -p', { kind: 'sdk' })
 
-test('with no level saved, a session starts on the level the model started the last one at', async ($, on) => {
-  mock.store(on)
-  // The next session starts without this one's values; the store stays.
-  let isNextSession = false
-  on('state.get', { plugin: 'effort-bar', key: 'app' }, (_, e, next) =>
-    isNextSession ? { value: { value: undefined, version: 0 } } : next(e),
-  )
-  on('turn.step', async function* (_, e) {
-    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null }
-  })
-  await startSession($, on, {})
-
-  // The model's default goes out with the first message.
-  const stream = $.turn.step({ turnId: 't', index: 0, model: MODEL, effort: 'medium', messageCount: 1 })
-  for await (const _chunk of stream) {
-    // drain
-  }
-
-  isNextSession = true
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect((await ui.find({ key: 'medium' }))?.props.variant).toBe('primary')
-  await ui.unmount()
+  expect(entered).toEqual(['task done', '/review', 'from -p'])
 })

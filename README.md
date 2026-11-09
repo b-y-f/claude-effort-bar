@@ -9,7 +9,7 @@ Effort  low  medium  high  xhigh  max
 - The level in use is highlighted. Click another one and your next message goes out at that level. It stays there until you click again.
 - Only the main conversation changes. Subagents keep their own effort, and your saved default is left alone.
 - If you change the level in Claude Code itself (for example with `/effort`), that wins, and the bar moves to it.
-- A new session opens with the level Claude Code starts at already highlighted: `CLAUDE_CODE_EFFORT_LEVEL` when it is set, else the level saved for your model, else the level that model started your last session at. A level given with `--effort` shows once your first message goes out, because Claude Code reports it only with a request.
+- A new session, `/clear` and `/new` included, starts with no level highlighted, because Claude Code tells plugins its level only with a request. Until you click one, a message you type does not go out: Claude Code shows why, and your text stays in the prompt box. Slash commands, background task results, scheduled prompts and `claude -p` runs are never held.
 
 ## Install
 

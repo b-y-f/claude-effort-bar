@@ -9,23 +9,21 @@ const LEVELS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'max']
 const pick = atom({ plugin: 'effort-bar', key: 'pick' } as const, null)
 // The level Claude Code itself sends, as seen on its latest main-thread request.
 const app = atom({ plugin: 'effort-bar', key: 'app' } as const, null)
-// Until that first request: the level Claude Code starts the session at.
-const start = atom({ plugin: 'effort-bar', key: 'start' } as const, null)
 
 const isLevel = (value: unknown): value is Effort => LEVELS.includes(value as Effort)
 
 export const register: Register = on => {
-  on('session.start', async ($, e, next) => {
-    const started = await next(e)
-    // Claude Code tells its level only with a request. Before the first one, take it from where Claude Code
-    // does: CLAUDE_CODE_EFFORT_LEVEL, then the level saved for the model, then the level the model started
-    // the last session at (its default).
-    const model = await $.session.model()
-    const saved = (await $.settings.read({ key: 'modelSettings' })) as Record<string, { effortLevel?: unknown }> | undefined
-    const last = (await $.store.get('started')) as Record<string, unknown> | undefined
-    const level = (await $.env.get('CLAUDE_CODE_EFFORT_LEVEL')) || saved?.[model]?.effortLevel || last?.[model]
-    await update($, start, () => (isLevel(level) ? level : null))
-    return started
+  on('prompt.submit', async ($, e, next) => {
+    // Only a message the person types where the bar is drawn waits for a level. Slash commands, background
+    // deliveries, the phone and `claude -p` go out as they are.
+    const isTyped = e.origin.kind === 'composer' || e.origin.kind === 'sdk'
+    if (e.command || e.isMeta || !isTyped) return next(e)
+    // Claude Code tells its level only with a request, so until a level is highlighted nobody knows which it is.
+    if (((await read($, pick)) ?? (await read($, app))) !== null) return next(e)
+    const surfaces = await $.session.surfaces()
+    if (!surfaces.includes('terminal') && !surfaces.includes('desktop')) return next(e)
+
+    return { drop: 'Pick an effort level on the bar above the prompt, then send again.' }
   })
 
   on('turn.step', async function* ($, e, next) {
@@ -36,14 +34,8 @@ export const register: Register = on => {
     const seen = await read($, app)
     if (seen !== sent) {
       await update($, app, () => sent)
-      if (seen === null) {
-        // The session's first request: remember the level this model starts at, for the next session.
-        const last = ((await $.store.get('started')) ?? {}) as Record<string, Effort>
-        await $.store.set('started', { ...last, [e.model]: sent })
-      } else {
-        // A level changed in Claude Code itself (/effort, the /model slider) wins over the bar's pick.
-        await update($, pick, () => null)
-      }
+      // A level changed in Claude Code itself (/effort, the /model slider) wins over the bar's pick.
+      if (seen !== null) await update($, pick, () => null)
     }
 
     const level = await read($, pick)
@@ -54,7 +46,7 @@ export const register: Register = on => {
     if (e.props.hasSurvey) return next(e)
 
     const { Box, Button, Text } = $.ui.resolve(e)
-    const current = (await read($, pick)) ?? (await read($, app)) ?? (await read($, start))
+    const current = (await read($, pick)) ?? (await read($, app))
 
     return (
       <Box flexDirection="row" gap={1} alignItems="center">
