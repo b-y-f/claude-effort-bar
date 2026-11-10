@@ -7,6 +7,8 @@ declare module 'claude-code' {
       pick: Effort | null
       /** The level Claude Code itself sent on its latest main-thread request. */
       app: Effort | null
+      /** The model that request named: Claude Code keeps a level per model. */
+      model: string | null
     }
   }
 }

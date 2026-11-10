@@ -9,6 +9,8 @@ const LEVELS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'max']
 const pick = atom({ plugin: 'effort-bar', key: 'pick' } as const, null)
 // The level Claude Code itself sends, as seen on its latest main-thread request.
 const app = atom({ plugin: 'effort-bar', key: 'app' } as const, null)
+// The model that request named. Claude Code keeps a level per model, so `app` is this model's.
+const model = atom({ plugin: 'effort-bar', key: 'model' } as const, null)
 
 const isLevel = (value: unknown): value is Effort => LEVELS.includes(value as Effort)
 
@@ -32,10 +34,13 @@ export const register: Register = on => {
     if (e.agentId !== undefined || !isLevel(sent)) return yield* next(e)
 
     const seen = await read($, app)
-    if (seen !== sent) {
+    const isSameModel = (await read($, model)) === e.model
+    if (seen !== sent || !isSameModel) {
       await update($, app, () => sent)
-      // A level changed in Claude Code itself (/effort, the /model slider) wins over the bar's pick.
-      if (seen !== null) await update($, pick, () => null)
+      await update($, model, () => e.model)
+      // A level changed in Claude Code itself (/effort, the /model slider) wins over the bar's pick. One that
+      // changed with the model is only the new model's own level, so the pick stays.
+      if (seen !== sent && isSameModel) await update($, pick, () => null)
     }
 
     const level = await read($, pick)

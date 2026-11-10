@@ -73,6 +73,36 @@ test('a level changed in Claude Code itself takes over from the bar', async ($, 
   await ui.unmount()
 })
 
+test('a pick stays when the model changes, though Claude Code sends the new model its own level', async ($, on) => {
+  const OTHER = 'claude-fable-5-2'
+  const sent: string[] = []
+  on('turn.step', async function* (_, e) {
+    sent.push(`${e.model} ${e.effort}`)
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null }
+  })
+  const send = async (model: string, effort: TurnStepInput['effort']) => {
+    const stream = $.turn.step({ turnId: 't', index: 0, model, effort, messageCount: 1 })
+    for await (const _chunk of stream) {
+      // drain
+    }
+    return stream.result
+  }
+
+  await send(MODEL, 'xhigh')
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'max' })
+  // The person ran /model: Claude Code keeps a level per model, and this one's is medium.
+  await send(OTHER, 'medium')
+  await send(OTHER, 'medium')
+  expect((await ui.find({ key: 'max' }))?.props.variant).toBe('primary')
+  // Then /effort high on that model: a level changed in Claude Code itself still takes over.
+  await send(OTHER, 'high')
+
+  expect(sent).toEqual([`${MODEL} xhigh`, `${OTHER} max`, `${OTHER} max`, `${OTHER} high`])
+  expect((await ui.find({ key: 'high' }))?.props.variant).toBe('primary')
+  await ui.unmount()
+})
+
 for (const [surface, origin] of [
   ['terminal', 'composer'],
   ['desktop', 'sdk'],
