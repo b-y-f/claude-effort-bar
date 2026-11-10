@@ -7,6 +7,7 @@ Effort  low  medium  high  xhigh  max
 ```
 
 - The level in use is highlighted. Click another one and your next message goes out at that level. It stays there until you click again.
+- Once a message has gone out, the bar says which level it went out at (`last message: xhigh`). When that differs from the message before, a line in the conversation says so, and whether the level was picked on the bar or is Claude Code's own.
 - Only the main conversation changes. Subagents keep their own effort, and your saved default is left alone.
 - If you change the level in Claude Code itself (for example with `/effort`), that wins, and the bar moves to it.
 - A new session, `/clear` and `/new` included, starts with no level highlighted, because Claude Code tells plugins its level only with a request. Until you click one, a message you type does not go out: Claude Code shows why, and your text stays in the prompt box. Slash commands, background task results, scheduled prompts and `claude -p` runs are never held.

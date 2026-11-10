@@ -9,6 +9,10 @@ declare module 'claude-code' {
       app: Effort | null
       /** The model that request named: Claude Code keeps a level per model. */
       model: string | null
+      /** The level the latest message went out at; null until one has, and on a model that takes none. */
+      latest: Effort | null
+      /** Whether a prompt entered the running turn since its latest request. */
+      entered: boolean
     }
   }
 }

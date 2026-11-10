@@ -103,6 +103,55 @@ test('a pick stays when the model changes, though Claude Code sends the new mode
   await ui.unmount()
 })
 
+test('the bar says which level the latest message went out at, and the conversation says when it changed', async ($, on) => {
+  // These hooks stand for the engine: the transcript's notices, the prompt entering, and the request.
+  const logged: string[] = []
+  on('ui.log', (_, e) => (logged.push(e.text), { value: undefined }))
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  on('turn.step', async function* (_, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null }
+  })
+  const send = async (turnId: string, index: number, effort: TurnStepInput['effort']) => {
+    const stream = $.turn.step({ turnId, index, model: MODEL, effort, messageCount: 1 })
+    for await (const _chunk of stream) {
+      // drain
+    }
+    return stream.result
+  }
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  // The bar's texts are its label, then what the latest message went out at.
+  const latest = async () => (await ui.findAll({ type: 'Text' }))[1]?.text
+
+  expect(await latest()).toBeUndefined()
+  await send('t1', 0, 'xhigh')
+  expect(await latest()).toBe('· last message: xhigh')
+
+  // Picked while the turn runs: a request that carries only tool results goes out at its message's level.
+  await ui.press({ key: 'high' })
+  await send('t1', 1, 'xhigh')
+  expect(await latest()).toBe('· last message: xhigh')
+  expect(logged).toEqual([])
+
+  await send('t2', 0, 'xhigh')
+  expect(await latest()).toBe('· last message: high')
+
+  // A message typed while the turn runs goes out with the turn's next request.
+  await ui.press({ key: 'max' })
+  await $.prompt.submit({ text: 'and this', wait: false, origin: { kind: 'composer' }, turnId: 't2' })
+  await send('t2', 1, 'xhigh')
+  expect(await latest()).toBe('· last message: max')
+
+  // The person ran /effort low in Claude Code.
+  await send('t3', 0, 'low')
+  expect(await latest()).toBe('· last message: low')
+  expect(logged).toEqual([
+    'Effort changed from xhigh to high (picked on the bar).',
+    'Effort changed from high to max (picked on the bar).',
+    "Effort changed from max to low (Claude Code's own level).",
+  ])
+  await ui.unmount()
+})
+
 for (const [surface, origin] of [
   ['terminal', 'composer'],
   ['desktop', 'sdk'],
